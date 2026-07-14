@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>의약품 정보 확대 도우미</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      body {
+        font-family: 'Noto Sans KR', sans-serif;
+        background-color: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      /* 고대비 테마 스타일 정의 */
+      body.high-contrast {
+        background-color: #000000;
+        color: #ffffff;
+      }
+      .high-contrast .bg-white {
+        background-color: #111111 !important;
+        border: 3px solid #ffffff !important;
+      }
+      .high-contrast .text-gray-900,
+      .high-contrast .text-gray-800,
+      .high-contrast .text-gray-700 {
+        color: #ffffff !important;
+      }
+      .high-contrast .bg-blue-600 {
+        background-color: #ffff00 !important;
+        color: #000000 !important;
+      }
+      .high-contrast .bg-emerald-600 {
+        background-color: #00ffff !important;
+        color: #000000 !important;
+      }
+      .high-contrast .bg-purple-600 {
+        background-color: #ff00ff !important;
+        color: #ffffff !important;
+      }
+      .high-contrast .border-gray-100 {
+        border-color: #ffffff !important;
+      }
+
+      /* 고대비 모드 시 최종 대형 텍스트 색상 최적화 */
+      .high-contrast #finalTextDisplay {
+        color: #ffff00 !important;
+      }
+
+      /* 포커스 링 강조 (접근성 표준 준수) */
+      *:focus-visible {
+        outline: 5px solid #facc15 !important;
+        outline-offset: 4px !important;
+      }
+
+      /* 로딩 중 깜빡임 효과 */
+      .loading-text {
+        animation: blinker 1s linear infinite;
+        color: #d97706; /* Tailwind amber-600 */
+      }
+      @keyframes blinker {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      /* 바운딩 박스 오버레이 캔버스 스타일 추가 */
+      #overlayCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none; /* 클릭 이벤트 통과 */
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body class="text-gray-900 transition-colors duration-300">
+    <header
+      class="w-full bg-gray-200 p-4 flex flex-wrap justify-between items-center shadow-md z-10 gap-4"
+      aria-label="접근성 도움 바"
+    >
+      <div
+        class="flex items-center gap-3 bg-white p-2 rounded-xl shadow border-2 border-gray-400"
+      >
+        <button
+          id="soundBtn"
+          onclick="toggleSound()"
+          class="text-xl sm:text-2xl font-black px-4 py-2 rounded-lg hover:bg-gray-100 focus:outline-none transition-colors"
+          aria-label="음성 안내 켜기/끄기"
+        >
+          🔊 켜짐
+        </button>
+        <div
+          class="flex flex-col justify-center border-l-2 border-gray-300 pl-3 pr-2"
+        >
+          <label for="volumeSlider" class="text-sm font-bold text-gray-600 mb-1"
+            >소리 크기</label
+          >
+          <input
+            type="range"
+            id="volumeSlider"
+            min="0"
+            max="1"
+            step="0.1"
+            value="1"
+            oninput="adjustVolume(this.value)"
+            class="w-24 sm:w-32 h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            aria-label="음성 안내 소리 크기 조절"
+          />
+        </div>
+      </div>
+      <button
+        id="contrastBtn"
+        onclick="toggleContrast()"
+        class="text-xl sm:text-2xl font-black bg-black text-yellow-400 px-5 py-3 rounded-xl shadow border-2 border-yellow-400 focus:outline-none"
+        aria-label="색상 반전 고대비 모드 토글"
+      >
+        고대비 모드 ◑
+      </button>
+    </header>
+
+    <main
+      class="flex-grow flex flex-col items-center justify-center p-6 w-full max-w-5xl mx-auto"
+      role="main"
+    >
+      <div class="text-center mb-8">
+        <h1
+          class="text-5xl sm:text-6xl font-black mb-4 tracking-tight text-blue-900"
+          id="mainTitle"
+        >
+          약 정보 돋보기
+        </h1>
+        <p
+          class="text-2xl sm:text-3xl font-bold text-gray-700 leading-relaxed"
+          id="subTitle"
+        >
+          원하시는 약품의 형태를<br />아래 버튼에서 선택해 주세요.
+        </p>
+      </div>
+
+      <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <button
+          id="btn-feature-1"
+          onclick="selectFeature(1)"
+          class="group flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-3xl p-8 shadow-xl transition-transform transform hover:scale-105 border-4 border-transparent focus:border-yellow-400"
+          aria-label="박스 형태 약품 유통기한 자동 스캔 시작"
+        >
+          <img
+            src="image_fef8fc.jpg"
+            alt="박스형 약품 사진"
+            class="w-32 h-32 object-contain bg-white rounded-2xl p-2 mb-4 shadow-md border-2 border-blue-400 group-hover:border-yellow-300 transition-colors"
+            aria-hidden="true"
+          />
+          <span
+            class="text-3xl sm:text-4xl font-black text-center leading-tight"
+          >
+            박스형 약품<br />
+            <span
+              class="text-lg sm:text-xl opacity-90 font-bold mt-2 block bg-blue-800 px-3 py-1 rounded-full"
+              >자동 유통기한 스캔</span
+            >
+          </span>
+        </button>
+
+        <button
+          id="btn-feature-2"
+          onclick="selectFeature(2)"
+          class="group flex flex-col items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-3xl p-8 shadow-xl transition-transform transform hover:scale-105 border-4 border-transparent focus:border-yellow-400"
+          aria-label="병 형태 약품 유통기한 자동 스캔 시작"
+        >
+          <img
+            src="image_fef93f.png"
+            alt="병형 약품 사진"
+            class="w-32 h-32 object-contain bg-white rounded-2xl p-2 mb-4 shadow-md border-2 border-emerald-400 group-hover:border-yellow-300 transition-colors"
+            aria-hidden="true"
+          />
+          <span
+            class="text-3xl sm:text-4xl font-black text-center leading-tight"
+          >
+            병형 약품<br />
+            <span
+              class="text-lg sm:text-xl opacity-90 font-bold mt-2 block bg-emerald-800 px-3 py-1 rounded-full"
+              >자동 유통기한 스캔</span
+            >
+          </span>
+        </button>
+
+        <button
+          id="btn-feature-3"
+          onclick="selectFeature(3)"
+          class="group flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-3xl p-8 shadow-xl transition-transform transform hover:scale-105 border-4 border-transparent focus:border-yellow-400"
+          aria-label="알약 통형 약품 유통기한 자동 스캔 시작"
+        >
+          <span class="text-7xl mb-4" aria-hidden="true">💊</span>
+          <span
+            class="text-3xl sm:text-4xl font-black text-center leading-tight"
+          >
+            알약 통형<br />
+            <span
+              class="text-lg sm:text-xl opacity-90 font-bold mt-2 block bg-purple-800 px-3 py-1 rounded-full"
+              >자동 유통기한 스캔</span
+            >
+          </span>
+        </button>
+      </div>
+
+      <section
+        class="text-center bg-white p-6 sm:p-8 rounded-3xl shadow-lg w-full max-w-3xl border-2 border-gray-100 mx-auto"
+      >
+        <h2
+          class="text-2xl sm:text-3xl font-black text-gray-800 mb-6 border-b-4 border-blue-500 pb-2 inline-block"
+        >
+          쉽게 사용하는 방법
+        </h2>
+        <ol
+          class="text-lg sm:text-2xl font-bold text-gray-700 text-left space-y-6 mx-auto max-w-2xl mt-2 w-full"
+        >
+          <li class="flex items-start gap-3 sm:gap-4">
+            <span
+              class="bg-blue-600 text-white rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0 font-black text-xl sm:text-2xl shadow-md mt-0.5"
+              >1</span
+            >
+            <span class="flex-1 break-keep leading-relaxed pt-1.5 sm:pt-2"
+              >위의 원하는 <strong>약품의 형태</strong>를 고릅니다.</span
+            >
+          </li>
+          <li class="flex items-start gap-3 sm:gap-4">
+            <span
+              class="bg-blue-600 text-white rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0 font-black text-xl sm:text-2xl shadow-md mt-0.5"
+              >2</span
+            >
+            <span class="flex-1 break-keep leading-relaxed pt-1.5 sm:pt-2"
+              >카메라 접근을 허용한 뒤, 화면 안으로 <strong>약 정보</strong>가
+              들어오도록 비춰주세요.</span
+            >
+          </li>
+          <li class="flex items-start gap-3 sm:gap-4">
+            <span
+              class="bg-blue-600 text-white rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0 font-black text-xl sm:text-2xl shadow-md mt-0.5"
+              >3</span
+            >
+            <span class="flex-1 break-keep leading-relaxed pt-1.5 sm:pt-2"
+              >잠시 가만히 계시면 자동으로 인식을 완료해 유통기한을
+              표시합니다.</span
+            >
+          </li>
+        </ol>
+      </section>
+    </main>
+
+    <script>
+      const API_KEYS = {
+        ROBOFLOW: '',
+        MODEL_ID: '',
+        GOOGLE_VISION: 'AIzaSyCTh9xnrIKWfuglS3BEuaSAAQnjdSQhB0Q',
+      };
+
+      let videoStream = null;
+      let videoTrack = null;
+      let ocrWorker = null;
+      let isScanning = false;
+      let scanTimer = null;
+      let isTorchOn = false;
+      let lastAudioAlertTime = 0;
+      let isSoundOn = true;
+      let currentVolume = 1.0;
+      let isProcessingFrame = false;
+
+      let lastRecognizedText = '';
+      let consecutiveMatchCount = 0;
+
+      function speak(text) {
+        if (!isSoundOn) return;
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'ko-KR';
+          utterance.rate = 0.9;
+          utterance.pitch = 1.0;
+          utterance.volume = currentVolume;
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+
+      function toggleSound() {
+        isSoundOn = !isSoundOn;
+        const btn = document.getElementById('soundBtn');
+        const slider = document.getElementById('volumeSlider');
+        if (isSoundOn) {
+          btn.innerHTML = '🔊 켜짐';
+          if (parseFloat(slider.value) === 0) {
+            currentVolume = 0.5;
+            slider.value = 0.5;
+          }
+          speak('음성 안내 기능을 켰습니다.');
+        } else {
+          btn.innerHTML = '🔇 꺼짐';
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        }
+      }
+
+      function adjustVolume(value) {
+        currentVolume = parseFloat(value);
+        const btn = document.getElementById('soundBtn');
+        if (currentVolume === 0) {
+          isSoundOn = false;
+          btn.innerHTML = '🔇 꺼짐';
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        } else {
+          isSoundOn = true;
+          btn.innerHTML = '🔊 켜짐';
+          speak('아');
+        }
+      }
+
+      document.body.addEventListener('click', function () {
+        if (
+          'speechSynthesis' in window &&
+          window.speechSynthesis.speaking === false &&
+          isSoundOn
+        ) {
+          // 터치 피드백용 더미 활성화 무시
+        }
+      });
+
+      function toggleContrast() {
+        document.body.classList.toggle('high-contrast');
+        const isHighContrast =
+          document.body.classList.contains('high-contrast');
+        speak(
+          isHighContrast
+            ? '고대비 모드를 켰습니다.'
+            : '일반 화면 모드로 돌아왔습니다.',
+        );
+      }
+
+      function selectFeature(featureNum) {
+        if (featureNum === 1) {
+          API_KEYS.ROBOFLOW = '7V6pHoQiA8J5kjO1LCuX';
+          API_KEYS.MODEL_ID = 'medicine_date2/1';
+          speak('박스형 약품 인식기를 준비하고 있습니다. 잠시만 기다려주세요.');
+        } else if (featureNum === 2) {
+          API_KEYS.ROBOFLOW = 'ixnhP2kovsMPC7CZ73uH';
+          API_KEYS.MODEL_ID = 'glass_medicine_date1/1';
+          speak('병형 약품 인식기를 준비하고 있습니다. 잠시만 기다려주세요.');
+        } else if (featureNum === 3) {
+          API_KEYS.ROBOFLOW = 'm0VswrvOxGyVVYgHJzLT';
+          API_KEYS.MODEL_ID = 'tung_medicine_date1/1';
+          speak(
+            '알약 통형 약품 인식기를 준비하고 있습니다. 잠시만 기다려주세요.',
+          );
+        }
+
+        openCameraModal();
+      }
+
+      async function openCameraModal() {
+        if (!document.getElementById('cameraModal')) {
+          const modalHtml = `
+                <div id="cameraModal" class="fixed inset-0 bg-black z-50 flex flex-col" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+                    <div class="p-4 flex justify-between items-center bg-gray-900 text-white border-b border-gray-800 shrink-0">
+                        <h2 id="modalTitle" class="text-2xl font-black">유통기한 스캔 카메라</h2>
+                        <div class="flex gap-3">
+                            <button id="flashBtn" onclick="toggleFlash()" class="hidden text-xl font-bold bg-yellow-400 text-black px-4 py-2 rounded-xl focus:outline-none">
+                                💡 조명 켜기
+                            </button>
+                            <button onclick="closeCameraModal()" class="text-xl font-bold bg-red-600 px-4 py-2 rounded-xl focus:outline-none">
+                                닫기 ✖
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="cameraContainer" class="relative flex-grow flex flex-col items-center justify-center bg-black overflow-hidden border-8 border-transparent transition-all duration-300">
+                        <video id="cameraVideo" class="w-full h-full object-contain" autoplay playsinline></video>
+                        <canvas id="overlayCanvas"></canvas>
+                        <canvas id="hiddenCanvas" class="hidden"></canvas>
+                        <canvas id="cropCanvas" class="hidden"></canvas>
+
+                        <div id="finalTextDisplay" class="hidden absolute inset-0 w-full h-full flex items-center justify-center text-red-600 text-6xl sm:text-7xl font-black tracking-wider break-all text-center p-6 z-20"></div>
+                    </div>
+
+                    <div id="ocrResultArea" class="bg-white p-6 min-h-[180px] max-h-[45vh] overflow-y-auto flex flex-col justify-center items-center border-t-4 border-gray-300 transition-colors duration-300 w-full shrink-0">
+                        <img id="magnified-img" class="hidden w-full max-w-sm max-h-[160px] object-contain my-2 border-2 border-gray-300 rounded-lg shadow-md" alt="확대된 유통기한" />
+
+                        <p id="ocrText" class="text-3xl font-black text-gray-900 text-center break-words w-full mt-2">
+                            화면 안으로 약 정보를 비춰주세요.<br>
+                            <span class="text-xl text-blue-600 mt-2 block">(자동으로 글자를 찾아 읽어드립니다)</span>
+                        </p>
+
+                        <button id="retryBtn" onclick="retryScanning()" class="hidden mt-4 w-full max-w-xs bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xl font-black py-4 rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2" aria-label="다시 인식하기">
+                            🔄 다시 인식하기
+                        </button>
+                    </div>
+                </div>
+                `;
+          document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
+        document.getElementById('cameraModal').classList.remove('hidden');
+        resetUIForScanning();
+        speak(
+          '자동 스캔 모드를 가동합니다. 화면 전체에 유통기한 글씨가 들어오도록 비추고 가만히 계셔 주세요.',
+        );
+        await startCamera();
+      }
+
+      async function startCamera() {
+        const videoElement = document.getElementById('cameraVideo');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert(
+            '이 기기 및 브라우저 환경에서는 카메라 기능을 실행할 수 없습니다.',
+          );
+          return;
+        }
+
+        try {
+          const constraints = {
+            video: {
+              facingMode: 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              advanced: [{ focusMode: 'continuous' }],
+            },
+            audio: false,
+          };
+          videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+          videoElement.srcObject = videoStream;
+          videoTrack = videoStream.getVideoTracks()[0];
+
+          if (
+            videoTrack.getCapabilities &&
+            videoTrack.getCapabilities().torch
+          ) {
+            document.getElementById('flashBtn').classList.remove('hidden');
+          }
+
+          videoElement.onloadedmetadata = () => {
+            isScanning = true;
+            resizeOverlayCanvas();
+            window.addEventListener('resize', resizeOverlayCanvas);
+            scanLoop();
+          };
+        } catch (error) {
+          console.error('카메라 에러:', error);
+          speak('카메라 연결 실패. 권한을 확인해주세요.');
+          closeCameraModal();
+        }
+      }
+
+      function resizeOverlayCanvas() {
+        const video = document.getElementById('cameraVideo');
+        const overlay = document.getElementById('overlayCanvas');
+        if (video && overlay) {
+          overlay.width = video.clientWidth;
+          overlay.height = video.clientHeight;
+        }
+      }
+
+      function closeCameraModal() {
+        isScanning = false;
+        clearTimeout(scanTimer);
+        const modal = document.getElementById('cameraModal');
+        if (modal) modal.classList.add('hidden');
+        if (videoStream) {
+          videoStream.getTracks().forEach((track) => track.stop());
+          videoStream = null;
+          videoTrack = null;
+        }
+        window.removeEventListener('resize', resizeOverlayCanvas);
+        speak('스캔 모드를 닫았습니다.');
+      }
+
+      function toggleFlash() {
+        if (!videoTrack) return;
+        isTorchOn = !isTorchOn;
+        const btn = document.getElementById('flashBtn');
+        btn.innerHTML = isTorchOn ? '💡 조명 끄기' : '💡 조명 켜기';
+        btn.className = isTorchOn
+          ? 'text-xl font-bold bg-yellow-500 text-black px-4 py-2 rounded-xl focus:outline-none ring-4 ring-yellow-300'
+          : 'text-xl font-bold bg-yellow-400 text-black px-4 py-2 rounded-xl focus:outline-none';
+        videoTrack
+          .applyConstraints({ advanced: [{ torch: isTorchOn }] })
+          .catch((e) => console.warn(e));
+      }
+
+      async function scanLoop() {
+        if (!isScanning || isProcessingFrame) return;
+
+        const video = document.getElementById('cameraVideo');
+        if (video.videoWidth === 0) {
+          scanTimer = setTimeout(scanLoop, 500);
+          return;
+        }
+
+        isProcessingFrame = true;
+
+        try {
+          const capCanvas = document.getElementById('hiddenCanvas');
+          const capCtx = capCanvas.getContext('2d');
+
+          capCanvas.width = video.videoWidth;
+          capCanvas.height = video.videoHeight;
+          capCtx.drawImage(video, 0, 0);
+
+          const base64Image = capCanvas
+            .toDataURL('image/jpeg', 0.8)
+            .split(',')[1];
+
+          const roboUrl = `https://detect.roboflow.com/${API_KEYS.MODEL_ID}?api_key=${API_KEYS.ROBOFLOW}`;
+          const roboResponse = await fetch(roboUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: base64Image,
+          });
+          const roboResult = await roboResponse.json();
+
+          const overlayCanvas = document.getElementById('overlayCanvas');
+          const overlayCtx = overlayCanvas.getContext('2d');
+          overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+          if (!roboResult.predictions || roboResult.predictions.length === 0) {
+            triggerNotFoundUI();
+          } else {
+            const bestBox = roboResult.predictions.reduce((prev, current) =>
+              prev.confidence > current.confidence ? prev : current,
+            );
+
+            const scaleX = overlayCanvas.width / video.videoWidth;
+            const scaleY = overlayCanvas.height / video.videoHeight;
+
+            const boxX = (bestBox.x - bestBox.width / 2) * scaleX;
+            const boxY = (bestBox.y - bestBox.height / 2) * scaleY;
+            const boxW = bestBox.width * scaleX;
+            const boxH = bestBox.height * scaleY;
+
+            overlayCtx.strokeStyle = '#00FF00';
+            overlayCtx.lineWidth = 4;
+            overlayCtx.strokeRect(boxX, boxY, boxW, boxH);
+            overlayCtx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+            overlayCtx.fillRect(boxX, boxY, boxW, boxH);
+
+            const cropCanvas = document.getElementById('cropCanvas');
+            const cropCtx = cropCanvas.getContext('2d');
+
+            const padW = bestBox.width * 0.15;
+            const padH = bestBox.height * 0.15;
+            const sx = Math.max(0, bestBox.x - bestBox.width / 2 - padW);
+            const sy = Math.max(0, bestBox.y - bestBox.height / 2 - padH);
+            const sWidth = Math.min(
+              capCanvas.width - sx,
+              bestBox.width + padW * 2,
+            );
+            const sHeight = Math.min(
+              capCanvas.height - sy,
+              bestBox.height + padH * 2,
+            );
+
+            cropCanvas.width = sWidth;
+            cropCanvas.height = sHeight;
+            cropCtx.filter = 'grayscale(100%) contrast(130%)'; // 기존 기능 유지 (대비 130%)
+            cropCtx.drawImage(
+              capCanvas,
+              sx,
+              sy,
+              sWidth,
+              sHeight,
+              0,
+              0,
+              sWidth,
+              sHeight,
+            );
+
+            const croppedBase64 = cropCanvas.toDataURL('image/jpeg', 0.9);
+
+            document.getElementById('magnified-img').src = croppedBase64;
+            document.getElementById('magnified-img').classList.remove('hidden');
+
+            const resultText = document.getElementById('ocrText');
+
+            // [개선 3] 인식 도중에는 지저분한 결과 대신 일관된 "분석 중" 안내 메시지만 출력하여 혼란 방지
+            resultText.innerHTML = `<span class="text-3xl font-black loading-text">사용기간 패턴을 정밀 분석 중입니다...</span>`;
+
+            const cleanCroppedBase64 = croppedBase64.split(',')[1];
+            const googleUrl = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEYS.GOOGLE_VISION}`;
+            const googlePayload = {
+              requests: [
+                {
+                  image: { content: cleanCroppedBase64 },
+                  features: [{ type: 'TEXT_DETECTION' }],
+                },
+              ],
+            };
+
+            const googleResponse = await fetch(googleUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(googlePayload),
+            });
+            const googleResult = await googleResponse.json();
+
+            if (
+              googleResult.responses &&
+              googleResult.responses[0].textAnnotations
+            ) {
+              const textFound =
+                googleResult.responses[0].textAnnotations[0].description
+                  .trim()
+                  .replace(/\s+/g, ' ');
+
+              // [개선 2] 년, 월, 일이 유기적으로 조합된 형태만 매칭하는 유통기한 정규식 포맷터 설계
+              // 예: 2026.12.31 / 25 11 02 / 24-05-10 / 2024년08월 등 포괄적 추정 포함
+              const datePattern =
+                /\d{2,4}[.\s\-/년\s_]*\d{1,2}[.\s\-/월\s_]*\d{1,2}/;
+
+              if (datePattern.test(textFound)) {
+                if (textFound === lastRecognizedText) {
+                  consecutiveMatchCount++;
+                } else {
+                  lastRecognizedText = textFound;
+                  consecutiveMatchCount = 1;
+                }
+
+                // 2번 연속 똑같이 옳게 인식되었을 때 -> 최종 글씨 확정 처리
+                if (consecutiveMatchCount >= 2) {
+                  isScanning = false;
+                  clearTimeout(scanTimer);
+
+                  // [개선 1] 카메라 관련 요소 완전 숨김 처리
+                  document.getElementById('cameraVideo').style.display = 'none';
+                  document.getElementById('overlayCanvas').style.display =
+                    'none';
+
+                  // [개선 1] 비어진 카메라 컨테이너 내부에 최종 글씨 대형 출력 활성화
+                  const fontDisplay =
+                    document.getElementById('finalTextDisplay');
+                  fontDisplay.innerText = textFound;
+                  fontDisplay.classList.remove('hidden');
+
+                  document.getElementById('cameraContainer').className =
+                    'relative flex-grow flex flex-col items-center justify-center bg-black overflow-hidden border-8 border-green-500 transition-all duration-300';
+                  document.getElementById('ocrResultArea').className =
+                    'bg-green-50 p-6 min-h-[180px] max-h-[45vh] overflow-y-auto flex flex-col justify-center items-center border-t-4 border-green-500 transition-colors duration-300 w-full shrink-0';
+
+                  resultText.innerHTML = `
+                      <span class="text-green-700 text-2xl font-black mb-1 block">인식 완료</span>
+                      <span class="text-red-600 text-4xl sm:text-5xl font-black tracking-wider break-all">${textFound}</span>
+                  `;
+
+                  document
+                    .getElementById('retryBtn')
+                    .classList.remove('hidden');
+                  speak(`인식된 유통기한 내용: ${textFound}`);
+                }
+              } else {
+                // 템플릿 필터링에 걸려 유효하지 않은 포맷인 경우 정보 가공 초기화
+                lastRecognizedText = '';
+                consecutiveMatchCount = 0;
+              }
+            } else {
+              lastRecognizedText = '';
+              consecutiveMatchCount = 0;
+            }
+          }
+        } catch (error) {
+          console.error('통신 에러:', error);
+        } finally {
+          isProcessingFrame = false;
+
+          if (isScanning) {
+            scanTimer = setTimeout(scanLoop, 500);
+          }
+        }
+      }
+
+      function triggerNotFoundUI() {
+        lastRecognizedText = '';
+        consecutiveMatchCount = 0;
+
+        const currentTime = Date.now();
+        if (currentTime - lastAudioAlertTime > 5000) {
+          const resultText = document.getElementById('ocrText');
+          resultText.innerHTML = `
+                  <span class="text-red-600 text-2xl font-black leading-snug">
+                      사용기간이 인식되지 않았습니다. 다른 부분을 비춰주세요.
+                  </span>
+              `;
+          lastAudioAlertTime = currentTime;
+        }
+      }
+
+      function retryScanning() {
+        lastRecognizedText = '';
+        consecutiveMatchCount = 0;
+        isScanning = true;
+        isProcessingFrame = false;
+
+        resetUIForScanning();
+        speak('다시 인식을 시작합니다. 약 상자의 글자를 화면에 비춰주세요.');
+        scanLoop();
+      }
+
+      function resetUIForScanning() {
+        document.getElementById('ocrResultArea').className =
+          'bg-white p-6 min-h-[180px] max-h-[45vh] overflow-y-auto flex flex-col justify-center items-center border-t-4 border-gray-300 transition-colors duration-300 w-full shrink-0';
+        document.getElementById('cameraContainer').className =
+          'relative flex-grow flex items-center justify-center bg-black overflow-hidden border-8 border-transparent transition-all duration-300';
+        document.getElementById('ocrText').innerHTML =
+          '화면 안으로 약 정보를 비춰주세요.<br><span class="text-xl text-blue-600 mt-2 block">(자동으로 글자를 찾아 읽어드립니다)</span>';
+        document.getElementById('magnified-img').classList.add('hidden');
+        document.getElementById('retryBtn').classList.add('hidden');
+
+        // [개선 1] 재스캔 시 숨겼던 카메라 뷰포트를 다시 복구하고 대형 텍스트창을 리셋 및 숨김
+        const video = document.getElementById('cameraVideo');
+        const overlay = document.getElementById('overlayCanvas');
+        const fontDisplay = document.getElementById('finalTextDisplay');
+
+        if (video) video.style.display = 'block';
+        if (overlay) overlay.style.display = 'block';
+        if (fontDisplay) {
+          fontDisplay.classList.add('hidden');
+          fontDisplay.innerText = '';
+        }
+
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        if (overlayCanvas) {
+          const overlayCtx = overlayCanvas.getContext('2d');
+          overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+      }
+
+      async function initTesseract() {
+        if (!ocrWorker) {
+          try {
+            console.log('OCR 엔진을 구축하는 중...');
+            ocrWorker = await Tesseract.createWorker('kor+eng');
+            console.log('Tesseract 엔진 활성화 성공');
+          } catch (e) {
+            console.error('OCR 모듈 초기설정 에러:', e);
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
+df
