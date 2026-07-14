@@ -380,13 +380,13 @@
                         </div>
                     </div>
 
-                    <div id="cameraContainer" class="relative flex-grow flex flex-col items-center justify-center bg-black overflow-hidden border-8 border-transparent transition-all duration-300">
+                    <div id="cameraContainer" class="relative flex-grow flex flex-col items-center justify-center bg-white overflow-hidden border-8 border-transparent transition-all duration-300">
                         <video id="cameraVideo" class="w-full h-full object-contain" autoplay playsinline></video>
                         <canvas id="overlayCanvas"></canvas>
                         <canvas id="hiddenCanvas" class="hidden"></canvas>
                         <canvas id="cropCanvas" class="hidden"></canvas>
 
-                        <div id="finalTextDisplay" class="hidden absolute inset-0 w-full h-full flex items-center justify-center text-red-600 text-6xl sm:text-7xl font-black tracking-wider break-all text-center p-6 z-20"></div>
+                        <div id="finalTextDisplay" class="hidden absolute inset-0 w-full h-full flex items-center justify-center text-red-600 text-6xl sm:text-5xl font-black tracking-wider break-all text-center p-6 z-20"></div>
                     </div>
 
                     <div id="ocrResultArea" class="bg-white p-6 min-h-[180px] max-h-[45vh] overflow-y-auto flex flex-col justify-center items-center border-t-4 border-gray-300 transition-colors duration-300 w-full shrink-0">
@@ -653,7 +653,6 @@
 
                   resultText.innerHTML = `
                       <span class="text-green-700 text-2xl font-black mb-1 block">인식 완료</span>
-                      <span class="text-red-600 text-4xl sm:text-5xl font-black tracking-wider break-all">${textFound}</span>
                   `;
 
                   document
